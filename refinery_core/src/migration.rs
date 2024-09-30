@@ -80,29 +80,29 @@ impl MigrationContent {
     }
 }
 
-/// A type that needs the driver to provide the query to run.
+/// A type that uses the driver to produce the query to run.
 pub trait FinalizeMigration<C>: Sized
 where
     C: Executor,
 {
     /// Create an instance of this type from a connection.
-    fn initialize(conn: &mut C) -> Result<Self, <C as Executor>::Error>;
+    fn initialize(conn: &C) -> Result<Self, <C as Executor>::Error>;
 
     /// Produce the SQL for the migration.
-    fn finalize(&self, conn: &mut C) -> Result<String, <C as Executor>::Error>;
+    fn finalize(&mut self) -> Result<String, <C as Executor>::Error>;
 }
 
-/// A type that needs the driver to asynchronously provide the query to run.
+/// A type that uses the driver to asynchronously produce the query to run.
 #[async_trait]
 pub trait AsyncFinalizeMigration<C>: Sized
 where
     C: AsyncExecutor + Send,
 {
     /// Create an instance of this type from a connection.
-    async fn initialize(conn: &mut C) -> Result<Self, <C as AsyncExecutor>::Error>;
+    async fn initialize(conn: &C) -> Result<Self, <C as AsyncExecutor>::Error>;
 
     /// Produce the SQL for the migration.
-    async fn finalize(&self, conn: &mut C) -> Result<String, <C as AsyncExecutor>::Error>;
+    async fn finalize(&mut self) -> Result<String, <C as AsyncExecutor>::Error>;
 }
 
 /// Represents a migration that is either waiting to be
@@ -170,13 +170,14 @@ impl Migration {
     where
         Fin: FinalizeMigration<C>,
     {
-        let finalizer = Fin::initialize(conn).migration_err(
-            &format!("unable to create finalizer for {input_name}"),
-            None,
-        )?;
-        let sql = finalizer
-            .finalize(conn)
+        let sql = Fin::initialize(conn)
+            .migration_err(
+                &format!("unable to create finalizer for {input_name}"),
+                None,
+            )?
+            .finalize()
             .migration_err(&format!("unable to finalize query for {input_name}"), None)?;
+
         Self::unapplied(input_name, no_transaction, &sql)
     }
 
@@ -189,14 +190,16 @@ impl Migration {
     where
         Fin: AsyncFinalizeMigration<C>,
     {
-        let finalizer = Fin::initialize(conn).await.migration_err(
-            &format!("unable to create finalizer for {input_name}"),
-            None,
-        )?;
-        let sql = finalizer
-            .finalize(conn)
+        let sql = Fin::initialize(conn)
+            .await
+            .migration_err(
+                &format!("unable to create finalizer for {input_name}"),
+                None,
+            )?
+            .finalize()
             .await
             .migration_err(&format!("unable to finalize query for {input_name}"), None)?;
+
         Self::unapplied(input_name, no_transaction, &sql)
     }
 
