@@ -20,7 +20,7 @@ pub(crate) fn crate_root() -> PathBuf {
     PathBuf::from(crate_root)
 }
 
-fn migration_fn_quoted<T: ToTokens>(_migrations: Vec<T>) -> TokenStream2 {
+fn no_finalize_migration_fn_quoted<T: ToTokens>(_migrations: Vec<T>) -> TokenStream2 {
     let result = quote! {
         pub fn runner() -> Runner {
             use refinery::{Migration, Runner};
@@ -57,6 +57,20 @@ fn finalize_migration_fn_quoted<T: ToTokens>(
         }
     };
     result
+}
+
+fn migration_fn_quoted<T: ToTokens>(
+    _migrations: Vec<T>,
+    _finalized_migrations: Vec<T>,
+    finalize_runtime: Option<FinalizeType>,
+) -> TokenStream2 {
+    if cfg!(feature = "finalize") {
+        let fns = finalize_migration_fn_quoted(_finalized_migrations, finalize_runtime);
+        quote! {#fns}
+    } else {
+        let fns = no_finalize_migration_fn_quoted(_migrations);
+        quote! {#fns}
+    }
 }
 
 fn migration_enum_quoted(migration_names: &[impl AsRef<str>]) -> TokenStream2 {
@@ -197,15 +211,13 @@ pub fn embed_migrations(input: TokenStream) -> TokenStream {
         }
     }
 
-    let fnq = migration_fn_quoted(_migrations);
-    let fnzq = finalize_migration_fn_quoted(_finalized_migrations, finalize_runtime);
+    let fnq = migration_fn_quoted(_migrations, _finalized_migrations, finalize_runtime);
     let enums = migration_enum_quoted(migration_filenames.as_slice());
     (quote! {
         pub mod migrations {
             #(#migrations_mods)*
             use refinery::{Migration, Runner, Executor, AsyncExecutor, AsyncFinalizeMigration, FinalizeMigration};
             #fnq
-            #fnzq
             #enums
         }
     })
@@ -250,6 +262,6 @@ mod tests {
             "} ",
             "Runner :: new (& migrations) }"
         };
-        assert_eq!(expected, migration_fn_quoted(migs).to_string());
+        assert_eq!(expected, no_finalize_migration_fn_quoted(migs).to_string());
     }
 }
