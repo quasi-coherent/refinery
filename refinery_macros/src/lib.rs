@@ -201,7 +201,7 @@ pub fn embed_migrations(input: TokenStream) -> TokenStream {
     (quote! {
         pub mod migrations {
             #(#migrations_mods)*
-            use refinery::{Migration, Runner, Executor, AsyncExecutor};
+            use refinery::{Migration, Runner, Executor, AsyncExecutor, AsyncFinalizeMigration, FinalizeMigration};
             #fnq
             #fnzq
             #enums
