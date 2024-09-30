@@ -17,7 +17,7 @@ pub use self::migration::{
 pub use self::runner::{Report, Runner};
 pub use self::util::{
     find_migration_files, load_sql_migrations, parse_finalize_migration, parse_migration_name,
-    parse_no_transaction, MigrationType,
+    parse_no_transaction, FinalizeType, MigrationType,
 };
 
 #[cfg(feature = "rusqlite")]
