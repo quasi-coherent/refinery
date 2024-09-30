@@ -33,7 +33,7 @@ fn file_re_all() -> &'static Regex {
 /// of a transaction.
 fn query_no_transaction_re_sql() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
-    RE.get_or_init(|| Regex::new(r"^[-]{2,}[\s]?(refinery:noTransaction)$").unwrap())
+    RE.get_or_init(|| Regex::new(r"^[-]{2,}[\s]*(refinery:noTransaction)[\s]*$").unwrap())
 }
 
 /// Matches the annotation `refinery:noTransaction` at the start of a
@@ -41,7 +41,7 @@ fn query_no_transaction_re_sql() -> &'static Regex {
 /// should ran outside of a transaction.
 fn query_no_transaction_re_all() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
-    RE.get_or_init(|| Regex::new(r"^[-|\/]{2,}[\s]?(refinery:noTransaction)$").unwrap())
+    RE.get_or_init(|| Regex::new(r"^[-|\/]{2,}[\s]*(refinery:noTransaction)[\s]*$").unwrap())
 }
 
 /// Matches the annotation `refinery:finalizeMigration` at the start of
@@ -49,7 +49,7 @@ fn query_no_transaction_re_all() -> &'static Regex {
 /// query should be produced at runtime using the selected connection type.
 fn file_finalize_query_re_rs() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
-    RE.get_or_init(|| Regex::new(r"[^\/]{2,}[\s]?(refinery:finalizeMigration)$").unwrap())
+    RE.get_or_init(|| Regex::new(r"^[\/]{2,}[\s]*(refinery:finalizeMigration)[\s]*$").unwrap())
 }
 
 /// enum containing the migration types used to search for migrations
@@ -73,6 +73,13 @@ impl MigrationType {
             MigrationType::Sql => query_no_transaction_re_sql(),
         }
     }
+}
+
+/// If the migration's finalizer is async or not.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FinalizeType {
+    Sync,
+    Async,
 }
 
 /// Parse a migration filename stem into a prefix, version, and name.
@@ -148,12 +155,19 @@ pub fn parse_no_transaction(file_content: String, migration_type: MigrationType)
 
 /// Determines if the embedded Rust migration has the annotation
 /// saying that it has a query that is not complete yet.
-pub fn parse_finalize_migration(file_content: String) -> Option<bool> {
-    let mut finalize_migration: Option<bool> = None;
+pub fn parse_finalize_migration(file_content: String) -> Option<FinalizeType> {
+    let mut finalize_migration: Option<FinalizeType> = None;
     let re = file_finalize_query_re_rs();
     for line in file_content.lines() {
-        if re.is_match(line) {
-            finalize_migration = Some(true);
+        if let Some(caps) = re.captures(line) {
+            // if matching, the 0th capture is everything, the 1st is
+            // the outer `(refinery:finalizeMigration(Async))`, and the
+            // 2nd if it exists is `Async`
+            let t = match caps.get(2) {
+                Some(_) => FinalizeType::Async,
+                _ => FinalizeType::Sync,
+            };
+            finalize_migration = Some(t);
             break;
         }
     }
